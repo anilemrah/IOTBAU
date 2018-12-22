@@ -1,31 +1,47 @@
+/* SEEDIOT MAIN STATION V0.2
+ * THIS CODE COLLECTS DATA FROM NRF24L01s
+ * IN THIS CASE, THERE ARE 2 TRANSMITTERS.
+ * AFTER RECEIVING DATAS, IT SENDS THEM TO
+ * THINGSPEAK.
+ * EMRAH ANIL
+ * 22.12.2018
+ */
+
 #include <SoftwareSerial.h>
-//Include needed Libraries at beginning
 #include "nRF24L01.h" // NRF24L01 library created by TMRh20 https://github.com/TMRh20/RF24
 #include "RF24.h"
 #include "SPI.h"
 
-#define DEBUG true
+//Arduino pins for ESP usage
 #define RX 2
 #define TX 3
 
-#define FaultPin 4 // Arcade switch is connected to Pin 8 on NANO
-#define SuccessPin 5 // Arcade switch is connected to Pin 8 on NANO
+//IDs of Nodes
+#define FIRST_NODE_ID 0
+#define SECOND_NODE_ID 1
 
-int ReceivedMessage[2]; // Used to store value received by the NRF24L01
+//Fault or success LED pins so we can understand if our
+//process finished successfully
+#define FaultPin 4 
+#define SuccessPin 5
 
-RF24 radio(9,10); // NRF24L01 used SPI pins + Pin 9 and 10 on the UNO
+// Used to store value received by the NRF24L01
+int ReceivedMessage[3]; 
 
-const uint64_t pipe = 0xE6E6E6E6E6E6; // Needs to be the same for communicating between 2 NRF24L01 
+// NRF24L01 used SPI pins + Pin 9 and 10 on the UNO
+RF24 radio(9,10); 
 
-int tempPin=0;
-int humPin=1;
+// Needs to be the same for communicating between 2 NRF24L01 
+const uint64_t pipe = 0xE6E6E6E6E6E6; 
 
-String HOST = "184.106.153.149";
-String PORT = "80";
+//ESP8266 settings
+String HOST = "184.106.153.149";//Thingspeak IP
+String PORT = "80";//Thingspeak Port
 String AP = "CENSORED"; //Wifi Name
 String PASS = "CENSORED"; //Wifi Password
 String API = "CENSORED"; //API
 
+//Thingspeak field names
 String field1 = "field1";
 String field2 = "field2";
 String field3 = "field3";
@@ -36,8 +52,13 @@ int countTimeCommand;
 
 boolean found = false;
 
-int tempSensor;
-int humSensor;
+//Sensor values
+int tempSensor1;
+int humSensor1;
+int tempSensor2;
+int humSensor2;
+
+String getData1;
 
 SoftwareSerial esp8266(RX,TX);
 
@@ -68,14 +89,8 @@ void setup() {
 }
 
 void loop() {
-
-  humSensor = 900;
   
   String readDat="GET https://api.thingspeak.com/channels/9/feeds.json?...";
-  String getData1; /*= "GET /update?api_key="+ API +"&"+ field1 +"="+String(tempSensor) +
-                      "&"+ field2 +"="+String(humSensor) +
-                      "&"+ field3 +"="+String(tempSensor + 1) + 
-                      "&"+ field4 +"="+String(humSensor + 1);*/
   
   switch(countTrueCommand) {
   
@@ -103,15 +118,14 @@ void loop() {
 
      readSensorDatas();
 
-     getData1 = "GET /update?api_key="+ API +"&"+ field1 +"="+String(tempSensor) +
-                      "&"+ field2 +"="+String(humSensor) +
-                      "&"+ field3 +"="+String(tempSensor + 1) + 
-                      "&"+ field4 +"="+String(humSensor + 1);
+     getData1 = "GET /update?api_key="+ API +"&"+ field1 +"="+String(tempSensor1) +
+                      "&"+ field2 +"="+String(humSensor1) +
+                      "&"+ field3 +"="+String(tempSensor2) + 
+                      "&"+ field4 +"="+String(humSensor2);
     countTrueCommand++;
     break;
    
     case 5: 
-      
       sendCommand("AT+CIPSEND=" +String(getData1.length()+4),4,">"); 
       break;
     
@@ -129,10 +143,14 @@ void loop() {
     
     case 8:
     
-      Serial.print("Temp: ");
-      Serial.println(tempSensor);
-      Serial.print("Hum: ");
-      Serial.println(humSensor);
+      Serial.print("Temp1: ");
+      Serial.println(tempSensor1);
+      Serial.print("Hum1: ");
+      Serial.println(humSensor1);
+      Serial.print("Temp2: ");
+      Serial.println(tempSensor2);
+      Serial.print("Hum2: ");
+      Serial.println(humSensor2);
       Serial.print(getData1);
       Serial.print(",");
       Serial.println(getData1.length());
@@ -185,29 +203,30 @@ void readSensorDatas() {
 
 if (radio.available())
   {
-    radio.read(ReceivedMessage, 2); // Read information from the NRF24L01
+    radio.read(&ReceivedMessage, sizeof(ReceivedMessage)); // Read information from the NRF24L01
 
-      tempSensor = ReceivedMessage[0];
-      humSensor = 1000;
-    //if (ReceivedMessage[0] == 025) // Indicates switch is pressed
-    //{
-      Serial.print("MES RCVD: ");
-      Serial.print(tempSensor);
+      if (ReceivedMessage[2] == FIRST_NODE_ID) {
+        tempSensor1 = ReceivedMessage[0];
+        humSensor1 = ReceivedMessage[1] * 10;
+      }
+      else if (ReceivedMessage[2] == SECOND_NODE_ID) {
+        tempSensor2 = ReceivedMessage[0];
+        humSensor2 = ReceivedMessage[1] * 10; 
+      }
+      
+      Serial.print("MES: TEMP1[");
+      Serial.print(tempSensor1);
+      Serial.print("] HUM1[");
+      Serial.print(humSensor1);
+      Serial.print("] TEMP2[");
+      Serial.print(tempSensor2);
+      Serial.print("] HUM2[");
+      Serial.print(humSensor2);
+      Serial.print("]");
       Serial.println(" ");
-      digitalWrite(SuccessPin,HIGH); // Set Pin to HIGH at beginning
+      digitalWrite(SuccessPin,HIGH);
       delay(400);
-      digitalWrite(SuccessPin,LOW); // Set Pin to HIGH at beginning
-
-    /*}
-    else
-    {
-      Serial.println("MSG IS WRONG");
-      digitalWrite(FaultPin,HIGH); // Set Pin to HIGH at beginning
-      delay(400);
-      digitalWrite(FaultPin,LOW); // Set Pin to HIGH at beginning
-      tempSensor = 22;
-      humSensor = 900;
-    }*/
-    delay(10);
+      digitalWrite(SuccessPin,LOW); 
+      delay(10);
   }
 }
